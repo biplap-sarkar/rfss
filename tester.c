@@ -24,5 +24,5 @@ int main(int argc, char **argv){
 	setup_listener(port);
 	setbuf(stdout, NULL);
 	//accept_client();
-	process_command();
+	rfss_process_command();
 }
