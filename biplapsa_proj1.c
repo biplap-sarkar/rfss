@@ -1,3 +1,11 @@
+/*
+ * biplapsa_proj1.c : Main file for program entry.
+ * 
+ * Created for CSE 589 Spring 2014 Programming Assignment 1
+ * 
+ * @Author : Biplap Sarkar (biplapsa@buffalo.edu)
+ *
+ */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -23,6 +31,5 @@ int main(int argc, char **argv){
 	}
 	setup_listener(port);
 	setbuf(stdout, NULL);
-	//accept_client();
 	rfss_process_command();
 }

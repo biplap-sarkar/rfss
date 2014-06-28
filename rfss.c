@@ -1,3 +1,14 @@
+/*
+ * rfss.c : Contains functions to start the Remote File Sharing System
+ * Server and provide the UI of the application multiplexed with socket
+ * connections.
+ * 
+ * Created for CSE 589 Spring 2014 Programming Assignment 1
+ * 
+ * @Author : Biplap Sarkar (biplapsa@buffalo.edu)
+ *
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -7,6 +18,7 @@
 #include <time.h>
 #include <arpa/inet.h>
 #include <string.h>
+#include "ft_stat.h"
 #include "rfss_node.h"
 #include "file_utils.h"
 #include "rfss.h"
@@ -15,38 +27,74 @@ static int sockd;
 fd_set fds;
 int maxfd = 0;
 int downloadqcount = 0;
-static int connected_node_count = 0;
+int connected_node_count = 0;
 static struct sockaddr_in serv_addr;
 static struct sockaddr_in client_addr[10];
 static int client_count = 0;
 static int mode;
 static char ip[20];
-static char myhostname[BUFFLEN];
+char myhostname[BUFFLEN];
 static int port;
 struct rfss_node *connected_node_list = NULL;
 struct rfss_node *global_node_list = NULL;
 
+/* List of sockets used to keep track of descriptors to listen to*/
 struct socklist {
 	int sockd;
 	struct socklist *next;
 } *socketlist;
 
+/*
+ * Displays help information
+ */
 void rfss_display_help(){
-	printf("I am helpless right now\nrfss>");
+	printf("Available options:-\n");
+	printf("1.) HELP\nUsage:- HELP\nDescription:- Display information about the available user interface options\n");
+	printf("2.) MYIP\nUsage:- MYIP\nDescription:- Display the IP address of this process.\n ");
+	printf("3.) MYPORT\nUsage:- MYPORT\nDescription:- Display the port on which this process is listening for incoming connections\n");
+	printf("4.) REGISTER\nUsage:- REGISTER <server IP> <port_no>\nDescription:- This command is used by the client to register itself with the server\n");
+	printf("5.) CONNECT\nUsage:- CONNECT <destination> <port no>\nDescription:- This command establishes a new TCP connection to the specified <destination> at the specified < port no>. The <destination> can either be an IP address or a hostname\n");
+	printf("6.) LIST\nUsage:- LIST\nDescription:- Display a numbered list of all the connections this process is part of.\n");
+	printf("7.) TERMINATE\nUsage:- TERMINATE <connection id>\nDescription:- This command will terminate the connection listed under the specified number when LIST is used to display all connections\n");
+	printf("8.) EXIT\nUsage:- EXIT\nDescription:- Close all connections and terminate the process.\n");
+	printf("9.) UPLOAD\nUsage:- UPLOAD <connection id> <file name>\nDescription:- Uploads <file name> to remote peer connected bye connection number <connection id>\n");
+	printf("10.) DOWNLOAD\nUsage:- DOWNLOAD <connection id 1> <file1> [[<connection id 2> <file2>] [<connection id 3> <file3>]...]\n Description:- Download <file> from remote peery specified by <connection id>\n");
+	printf("11.) CREATOR\nUsage:- CREATOR\nDescription:- Display information about the creator\nrfss>");
 }
 
+/*
+ * Displays IP of the machine running this program
+ */
 void rfss_display_ip(){
 	printf("%s\nrfss>",ip);
 }
 
+/*
+ * Displays the port at which this program is listening for incoming
+ * connections.
+ */
 void rfss_display_port(){
 	printf("%d\nrfss>",port);
 }
 
+/*
+ * Displays the information about the developer of this application.
+ */
 void rfss_display_creator(){
-	printf("Cursing me won't make your life better\nrfss>");
+	printf("Created By :- Biplap Sarkar\n");
+	printf("UBIT Name :- biplapsa\n");
+	printf("Email :- biplapsa@buffalo.edu\nrfss>");
 }
 
+
+/*
+ * This function starts listening for incoming connections in the port 
+ * specified.
+ * 
+ * @arg _port: port at which the socket will listen to incoming connections
+ * @return: 0 in case of success, terminates the process after displaying
+ * error message in case of failure
+ */
 int setup_listener(int _port){
 	port = _port;
 	if((sockd = socket(AF_INET, SOCK_STREAM, 0))<0){
@@ -61,9 +109,17 @@ int setup_listener(int _port){
 		exit(1);
 	}
 	listen(sockd, 1);
-	//extract_local_ip();
 	myiplookup();
+	return 0;
 }
+
+/*
+ * This function determines the IP of the machine running this program
+ * by making connection to Google's public DNS
+ * 
+ * @return: returns 0 in case of success, terminates the process after
+ * displaying error message in case of failure
+ */
 int myiplookup(){
 	int clientsockd;
 	struct sockaddr_in google_addr;
@@ -87,7 +143,10 @@ int myiplookup(){
 		exit(1);
 	}
 	inet_ntop(AF_INET, &(myaddr.sin_addr), ip, INET_ADDRSTRLEN);
+	return 0;
 }
+
+/*
 void extract_local_ip(){
 	struct sockaddr_in address;
 	socklen_t len;
@@ -105,8 +164,12 @@ void extract_local_ip(){
 	}
 	else
 		strcpy(ip,"localhost");
-}
+}*/
 
+/*
+ * This function multiplexes the UI commands with the incoming socket
+ * commands using select and invokes the relevent processor function
+ */
 void rfss_process_command(){
 	int fdi;
 	fd_set tfds;
@@ -122,25 +185,13 @@ void rfss_process_command(){
 	while(1){
 		FD_ZERO(&tfds);
 		tfds = fds;
-		/*
-		while(socketlist){
-			FD_SET(socketlist->sockd, &fds);
-			socketlist = socketlist->next;
-		}*/
-		//FD_SET(sockd, &fds);
 		select(maxfd+1, &tfds, NULL, NULL, NULL);
 		if(FD_ISSET(STDIN, &tfds)){
 			rfss_process_ui_command();
-			continue;
-			//FD_CLR(STDIN, &fds);
-			//FD_SET(STDIN, &fds);
 		}
 		if(FD_ISSET(sockd, &tfds)){
 			// connect request from a client
 			accept_client();
-			continue;
-			//FD_CLR(sockd, &fds);
-			//FD_SET(sockd, &fds);
 		}
 		for(fdi=0;fdi<=maxfd;fdi++){
 			if(fdi==STDIN || fdi==sockd)
@@ -148,14 +199,17 @@ void rfss_process_command(){
 			if(FD_ISSET(fdi, &tfds)){
 				// handle command from a connected client
 				rem_process_command(fdi);
-				continue;
-				//FD_CLR(fdi, &fds);
-				//FD_SET(fdi, &fds);
-				//process_remote_command(fdi);
 			}
 		}
 	}
 }
+
+/*
+ * Insert a new socket in socket list
+ * 
+ * @arg socketd : socket to be inserted in the list
+ * @return : void
+ */
 void add_into_socketlist(int socketd){
 	while(socketlist->next){
 		socketlist = socketlist->next;
@@ -165,6 +219,10 @@ void add_into_socketlist(int socketd){
 	new->next = NULL;
 	socketlist->next = new;
 }
+
+/*
+ * Accepts a tcp connection from a remote client
+ */
 void accept_client(){
 	int clientlen = sizeof(client_addr[client_count]);
 	int clientsoc = accept(sockd, (struct sockaddr *)&client_addr[client_count], &clientlen);
@@ -174,6 +232,11 @@ void accept_client(){
 	add_into_socketlist(clientsoc);
 	clientsoc = clientsoc + 1;
 }
+
+/*
+ * This function reads commands from UI and invokes the relevent function
+ * to process it
+ */
 void rfss_process_ui_command(){
 	char cmdstr[100];
 	char cmd[100];
@@ -182,6 +245,10 @@ void rfss_process_ui_command(){
 	cmdstr[len-1] = '\0';
 	strcpy(cmd, cmdstr);
 	char *command = strtok(cmdstr," ");
+	if(command == NULL){
+		printf("rfss>");
+		return;
+	}
 	if(strcasecmp(command,"help")==0){
 		if(strtok(NULL," ")!=NULL){
 			printf("Error: Command %s does not take any parameter\nrfss>",command );
@@ -229,17 +296,17 @@ void rfss_process_ui_command(){
 		}
 		char *serverport = strtok(NULL, " ");
 		if(serverport == NULL){
-			printf("Error: Invalid register command. Usage: connect <destination> <serverport>\nrfss>");
+			printf("Error: Invalid connect command. Usage: connect <destination> <serverport>\nrfss>");
 			return;
 		}
 		char *endptr;
 		int porti = (int) strtol(serverport, &endptr, 10);
 		if(*endptr != 0){
-			printf("Error: Invalid register command. Invalid port.\nrfss>");
+			printf("Error: Invalid connect command. Invalid port.\nrfss>");
 			return;
 		}
 		if(rfss_connect(dest, porti)<0){
-			printf("Error: Registeration failed\nrfss>");
+			printf("Error: Connect failed\nrfss>");
 			return;
 		}
 		printf("Sucessfully connected with the %s\nrfss>",dest);
@@ -309,9 +376,22 @@ void rfss_process_ui_command(){
 		rfss_list();
 	}
 	else
-		printf("%s received\nrfss>",cmd);
+		printf("Invalid command!!! Use help command to get a list of available commands\nrfss>");
 }
+
+/*
+ * Implements the EXIT command from the UI
+ */
 void rfss_exit(){
+	if(mode == CLIENT){
+		char exitreq[BUFFLEN];
+		memset(exitreq, 0, BUFFLEN);
+		sprintf(exitreq,"exit");
+		if(connected_node_count>0){
+			struct rfss_node *servernd = rfss_getnodebyconn(1);
+			send(servernd->sockd, exitreq, strlen(exitreq), 0); 
+		}
+	}
 	exit(0);
 }
 /*
@@ -365,6 +445,13 @@ void process_remote_command(int clientsockd){
 	}
 }
 */
+
+/*
+ * Returns the connection id for socket sockd in the connection list
+ * 
+ * @arg sockd: socket descriptor in the connection list
+ * @return : connection id, if sockd is valid, -1 otherwise
+ */
 int rfss_getcon(int sockd){
 	int con = 1;
 	struct rfss_node *ptr = connected_node_list;
@@ -376,6 +463,13 @@ int rfss_getcon(int sockd){
 	}
 	return -1;
 }
+
+/*
+ * Removes a connection from connection list specified by con
+ * 
+ * @arg con: connection number to be removed
+ * @return : 1 if connection is successfully removed, 0 otherwise
+ */
 int rfss_remove_connection_node(int con) {
 	if(con > connected_node_count)
 		return 0;
@@ -428,6 +522,14 @@ int rfss_remove_connected_node(int clientsockd, char *ip){
 	return 1;
 }*/
 
+/*
+ * Removes an entry from the global list of nodes
+ * 
+ * @arg clientsockd: socket descriptor at which the node to be 
+ * removed is connected
+ * @arg nodeip: IP of the node to be removed
+ * @return returns 1 if node is successfully removed, 0 otherwise
+ */
 int rfss_remove_global_node(int clientsockd, char *nodeip){
 	int connection = rfss_getcon(clientsockd);
 	rfss_remove_connection_node(connection);
@@ -451,6 +553,16 @@ int rfss_remove_global_node(int clientsockd, char *nodeip){
 	return 1;
 }
 
+/*
+ * Adds a new connection node in the list of connected nodes
+ * 
+ * @arg clientsockd: socket descriptor at which new node is connected
+ * @ip : IP of the new node
+ * @hostname : Hostname of the new node
+ * @port : port at which new node is listening
+ * 
+ * @return : returns 0 in case of success, -1 otherwise
+ */
 int rfss_add_connected_node(int clientsockd, char *ip, char *hostname, int port){
 	struct rfss_node *new_node = (struct rfss_node *)malloc(sizeof(struct rfss_node));
 	new_node->ip = (char *)malloc(sizeof(char)*20);
@@ -475,6 +587,12 @@ int rfss_add_connected_node(int clientsockd, char *ip, char *hostname, int port)
 	return 0;
 }
 
+/* 
+ * Implements TERMINATE command from the UI
+ * 
+ * @arg connection : Connection number which needs to be terminated
+ * @return : 0 in case of success, -1 otherwise
+ */
 int rfss_terminate(int connection){
 	int count = 0;
 	char terminatereq[BUFFLEN];
@@ -501,6 +619,12 @@ int rfss_terminate(int connection){
 	return 0;
 }
 
+/*
+ * Returns a node in global network list by ip
+ * 
+ * @arg nodeip: IP of the node
+ * @return : A struct rfss_node type variable representing the node
+ */
 struct rfss_node * rfss_findglobalnodebyip(char *nodeip){
 	struct rfss_node *ptr = global_node_list;
 	while(ptr){
@@ -511,6 +635,12 @@ struct rfss_node * rfss_findglobalnodebyip(char *nodeip){
 	return NULL;
 }
 
+/*
+ * Returns a node in global network list by hostname
+ * 
+ * @arg hostname: Hostname of the node
+ * @return : A struct rfss_node type variable representing the node
+ */
 struct rfss_node * rfss_findglobalnodebyhostname(char *hostname){
 	struct rfss_node *ptr = global_node_list;
 	while(ptr){
@@ -520,6 +650,16 @@ struct rfss_node * rfss_findglobalnodebyhostname(char *hostname){
 	}
 	return NULL;
 }
+
+/*
+ * Adds a new node in the list of global nodes
+ * 
+ * @nodeip : IP of the new node
+ * @hostname : Hostname of the new node
+ * @port : port at which new node is listening
+ * 
+ * @return : returns 0 in case of success, -1 otherwise
+ */ 
 int rfss_add_global_node(char *nodeip, char *hostname, int port){
 	struct rfss_node *new_node = (struct rfss_node *)malloc(sizeof(struct rfss_node));
 	new_node->ip = (char *)malloc(sizeof(char)*20);
@@ -542,14 +682,19 @@ int rfss_add_global_node(char *nodeip, char *hostname, int port){
 	return 0;
 }
 
+/*
+ * Finds the hostname of a node from it's IP
+ * 
+ * @arg ip: IP of the node
+ * @arg hostname: Argument to keep the hostname. It is assumed that
+ * the caller function has already allocated memory for it.
+ * 
+ * @return: 0 in case of success, -1 otherwise
+ */
 int gethostnamebyip(char *ip, char **hostname){
 	struct sockaddr_in address;
-	//struct hostent ret;
-	//struct hostent *result;
 	char buf[100];
 	memset(buf,0,100);
-	//int err;
-	//address.s_addr=inet_addr(ip);
 	inet_pton(AF_INET,ip,&address.sin_addr);
 	address.sin_family = AF_INET;
 	
@@ -558,20 +703,25 @@ int gethostnamebyip(char *ip, char **hostname){
 		strcpy(*hostname, buf);
 	else
 		printf("%s",gai_strerror(res));
-	/*
-	int res=gethostbyaddr_r((void *) &address,
-                        sizeof(struct in_addr), AF_INET,
-                        &ret, buf, 100, &result, &err);
-    if(res == 0){
-		strcpy(*hostname, ret.h_name);
-	} */
 	return res;
 }
 
+/*
+ * Sets the mode at which this process is operating. Two possible modes
+ * are CLIENT and SERVER
+ * 
+ * @arg modearg: mode of the application
+ */
 void set_mode(int modearg){
 	mode = modearg;
 }
 
+/*
+ * Returns a node from the list of connected nodes for a connection id
+ * 
+ * @arg connid: connection id
+ * @return: Connection node against the id
+ */
 struct rfss_node * getnode(int connid){
 	if(connid <= 0 || connid > connected_node_count)
 		return NULL;
@@ -583,6 +733,13 @@ struct rfss_node * getnode(int connid){
 	}
 	return ptr;
 }
+
+/*
+ * Initialises and initiates the download request to implement DOWNLOAD request
+ * from UI
+ * 
+ * @arg arglist: download arguments (<connection id> <file name>)
+ */
 void rfss_init_download(char *arglist){
 	char args[BUFFLEN];
 	memset(args,0,BUFFLEN);
@@ -595,7 +752,10 @@ void rfss_init_download(char *arglist){
 	_connid = strtok_r(args," ",&saveptr);
 	connid = atoi(_connid);
 	file = strtok_r(NULL," ",&saveptr);
-	rfss_download(connid, file);
+	if(rfss_prepare_download(connid, file)<0){
+		printf("Error initiating download\nrfss>");
+		return;
+	}
 	while(1){
 		_connid = strtok_r(NULL," ",&saveptr);
 		if(_connid == NULL)
@@ -604,10 +764,122 @@ void rfss_init_download(char *arglist){
 		file = strtok_r(NULL," ",&saveptr);
 		if(file == NULL)
 			break;
-		rfss_download(connid, file);
+		if(rfss_prepare_download(connid, file)<0){
+			printf("Error initiating download\nrfss>");
+			return;
+		}
+	}
+	int i=0;
+	for(i=2;i<=connected_node_count;i++){
+		rfss_start_download(i);
 	}
 }
 
+/*
+ * Starts download for a given connection id by fetching the parameters
+ * and changing the mode of the connection to DATA mode
+ * 
+ * @arg connid: connection id from which file is to be downloaded
+ * @return 0 in case of successful download, -1 in case of failure
+ */
+int rfss_start_download(int connid){
+	char downloadreq[BUFFLEN];
+	char *saveptr = (char *)malloc(sizeof(char));
+	memset(downloadreq,0,BUFFLEN);
+	struct rfss_node *nd = rfss_getnodebyconn(connid);
+	if(nd==NULL){
+		printf("Error: No active nodes associated with connection %d\n",connid);
+		return -1;
+	}
+	if(nd->ft_list == NULL)
+		return 0;
+	strcat(downloadreq,"download");
+	struct ft_stat *ptr = nd->ft_list;
+	while(ptr){
+		strcat(downloadreq,":");
+		strcat(downloadreq,ptr->file);
+		ptr = ptr->next;
+	}
+	send(nd->sockd, downloadreq, strlen(downloadreq), 0);
+	memset(downloadreq, 0, BUFFLEN);
+	recv(nd->sockd, downloadreq, BUFFLEN, 0);
+	char *resp = strtok_r(downloadreq,":",&saveptr);
+	char *_filesize;
+	if(strcasecmp(resp,"downloadack")==0){
+		ptr = nd->ft_list;
+		while(ptr){
+			_filesize = strtok_r(NULL,":",&saveptr);
+			if(_filesize == NULL){
+				printf("Error: argument mismatch with server\nrfss>");
+				return -1;
+			}
+			char *basename = (char *)malloc(sizeof(char)*BUFFLEN);
+			memset(basename,0,BUFFLEN);
+			fu_basename(ptr->file, &basename);
+			strcpy(ptr->file, basename);
+			free(basename);
+			ptr->bytes_total = atoi(_filesize);
+			ptr = ptr->next;
+		}
+		send(nd->sockd,"downloadack",strlen("downloadack"),0);
+		nd->status = DATA;
+		downloadqcount++;
+	}
+	else{
+		resp = strtok_r(NULL,":",&saveptr);
+		printf("Error: Response from server is %s\nrfss>",resp);
+		nd->ft_list = NULL;
+		return -1;
+	}
+	return 0;
+}
+
+/*
+ * Prepares arguments for downloading a file from a particular connection.
+ * 
+ * @arg connid : connection id from which file is to be downloaded
+ * @arg file : file which has to be downloaded
+ * 
+ * @return : 0 in case of success, -1 otherwise
+ */
+int rfss_prepare_download(int connid, char *file){
+	if(connid < 2){
+		printf("Error: cannot download from connection %d\n",connid);
+		return -1;
+	}
+	struct rfss_node *nd = rfss_getnodebyconn(connid);
+	if(nd == NULL){
+		printf("Error: No active nodes associated with connection %d\n",connid);
+		return -1;
+	}
+	/*
+	int filesize = fu_getfilesize(file);
+	if(filesize < 0){
+		printf("Error: Could not get details of file %s, make sure it exists",file);
+		return -1;
+	}*/
+	struct ft_stat *stat = (struct ft_stat *)malloc(sizeof(struct ft_stat));
+	stat->file = (char *)malloc(sizeof(char)*BUFFLEN);
+	memset(stat->file, 0, BUFFLEN);
+	strcpy(stat->file, file);
+	stat->fd = -1;
+	stat->bytes_total = 0;
+	stat->bytes_received = 0;
+	stat->next = NULL;
+	
+	if(nd->ft_list == NULL)
+		nd->ft_list = stat;
+	else{
+		struct ft_stat *ptr = nd->ft_list;
+		while(ptr->next){
+			ptr = ptr->next;
+		}
+		ptr->next = stat;
+	}
+	printf("Download of file %s from %s initiated\n",file,nd->hostname);
+	return 0;
+}
+/*
 int rfss_download(int connid, char *file){
 	char downloadreq[BUFFLEN];
 	memset(downloadreq, 0, BUFFLEN);
@@ -643,7 +915,22 @@ int rfss_download(int connid, char *file){
 	printf("File %s download from server %s initiated\n",file,nd->hostname);
 	return 0;
 }
+*/
+
+/*
+ * Implements UPLOAD command of the UI
+ * 
+ * @arg connid: connection id
+ * @arg file: File to be uploaded
+ */
 void rfss_upload(int connid, char *file){
+	if(connid == 1){
+		printf("Error: Cannot upload to server\nrfss>");
+		return;
+	}
+	if(connid < 1 || connid > connected_node_count){
+		printf("Error: Invalid connection number\nrfss>");
+	}
 	char uploadreq[BUFFLEN];
 	memset(uploadreq, 0, BUFFLEN);
 	struct rfss_node *nd = getnode(connid);
@@ -657,7 +944,11 @@ void rfss_upload(int connid, char *file){
 		printf("Error: Cannot upload file %s, make sure it exists\nrfss>",file);
 		return;
 	}
-	sprintf(uploadreq,"upload:%s:%d",file,filesize);
+	char *basename = (char *)malloc(sizeof(char)*BUFFLEN);
+	memset(basename, 0, BUFFLEN);
+	fu_basename(file,&basename);
+	sprintf(uploadreq,"upload:%s:%d",basename,filesize);
+	free(basename);
 	send(sockd, uploadreq, strlen(uploadreq), 0);
 	memset(uploadreq, 0, BUFFLEN);
 	recv(sockd, uploadreq, BUFFLEN, 0);
@@ -665,25 +956,68 @@ void rfss_upload(int connid, char *file){
 		printf("Error: Cannot upload file. Remote peer not ready\nrfss>");
 		return;
 	}
-	fu_sendfile(sockd, file, filesize);
-	printf("File %s successfully uploaded\nrfss>",file);
+	struct timespec starttime, endtime;
+	clock_gettime(CLOCK_REALTIME, &starttime);
+	int res = fu_sendfile(sockd, file, filesize);
+	clock_gettime(CLOCK_REALTIME, &endtime);
+	double timediff = (double)(endtime.tv_sec - starttime.tv_sec) +
+						(double)(endtime.tv_nsec - starttime.tv_nsec)/1E9 ;
+	double speed = (filesize * 8)/timediff;
+	if(res == 0){
+		printf("File %s successfully uploaded to %s\n",file,nd->hostname);
+		printf("%s -> %s, File Size: %d bytes, Time Taken: %f seconds, Tx Rate: %.2fbits/second\nrfss>",myhostname,nd->hostname,filesize,timediff,speed);
+	}
+	else{
+		printf("Error while uploading\nrfss>");
+	}
 }
 
+/*
+ * Implements LIST command of the UI
+ * Displays the list of connected nodes
+ */
 void rfss_list(){
 	if(connected_node_list == NULL){
 		printf("No hosts connected\nrfss>");
 		return;
 	}
 	struct rfss_node *ptr;
-	printf("id:Hostname\tIP adddress\tPort No\n");
+	printf("   id:\t\t\tHostname\t\tIP adddress\tPort No\n");
 	int id;
 	for(ptr=connected_node_list,id=1;ptr;ptr=ptr->next,id++){
-		printf("%d : %s\t%s\t%d\n",id,ptr->hostname,ptr->ip,ptr->port);
+		printf("%5d : %30s %20s %10d\n",id,ptr->hostname,ptr->ip,ptr->port);
 	}
 	printf("rfss>");
 }
 
+/*
+ * Check if this node is connected with node having specified IP
+ * @arg ip : IP of remote node
+ * @return : 0 if this node is not connected with node having ip IP,
+ * 1 if it is connected
+ */
+int is_connected(char *ip){
+	struct rfss_node *nd = connected_node_list;
+	while(nd){
+		if(strcmp(nd->ip,ip)==0)
+			return 1;
+		nd = nd->next;
+	}
+	return 0;
+}
+/*
+ * Implements CONNECT command from UI
+ * 
+ * @arg dest: Destination address, can be either IP or hostname
+ * @arg port: Port at which connection has to be established
+ * @return : 0 in case of success, -1 otherwise
+ */
 int rfss_connect(char *dest, int port){
+	if(strcmp(dest,myhostname)==0 || strcmp(dest,ip)==0 || strcmp(dest,"127.0.0.1")==0
+		|| strcmp(dest,"localhost")==0){
+		printf("Self connections not allowed\nrfss>");
+		return -1;
+	}
 	struct sockaddr_in destaddr;
 	memset(&destaddr, 0, sizeof(destaddr));
 	destaddr.sin_family = AF_INET;
@@ -692,14 +1026,14 @@ int rfss_connect(char *dest, int port){
 	char connectmsg[BUFFLEN];
 	memset(connectmsg, 0, BUFFLEN);
 	struct rfss_node *remote_node;
-	if(connected_node_count >= 4){
+	if(connected_node_count >= MAX_CONNECTED_NODES){
 		printf("rfss_connect(): already connected with 4 nodes, cannot connect more\nrfss>");
 		return -1;
 	}
 	if(!isvalidip){
 		remote_node = rfss_findglobalnodebyhostname(dest);
 		if(remote_node == NULL){
-			printf("rfss_connect(): %s is not a valid destination\nrfss>");
+			printf("rfss_connect(): %s is not a valid destination\nrfss>",dest);
 			return -1;
 		}
 		inet_pton(AF_INET, remote_node->ip, &(destaddr.sin_addr));
@@ -710,6 +1044,10 @@ int rfss_connect(char *dest, int port){
 			printf("rfss_connect(): %s is not a valid destination\nrfss>");
 			return -1;
 		}
+	}
+	if(is_connected(remote_node->ip)){
+		printf("Already connected with %s, duplicate connections not allowed\nrfss>",remote_node->hostname);
+		return -1;
 	}
 	int remsockd = socket(AF_INET, SOCK_STREAM, 0);
 	connect(remsockd, (struct sockaddr *)&destaddr, sizeof(destaddr));
@@ -725,13 +1063,32 @@ int rfss_connect(char *dest, int port){
 		add_into_socketlist(remsockd);
 		rfss_add_connected_node(remsockd, remote_node->ip, remote_node->hostname, port);
 		printf("Peer %s connected\nrfss>",remote_node->hostname);
+		return 0;
 	}
 	else{
-		printf("Error connecting %s: %s\nrfss",remote_node->hostname,connectack);
+		connectack = strtok(NULL, ":");
+		printf("Error connecting %s: %s\nrfss>",remote_node->hostname,connectack);
+		return -1;
 	}
 }
 
+/*
+ * Implements REGISTER command from UI
+ * 
+ * @arg serverip: IP of server
+ * @arg serverport : port at which server is listening for connections.
+ * 
+ * @return 0 in case of success, -1 otherwise
+ */
 int rfss_register(char *serverip, int serverport){
+	if(strcmp(serverip,ip)==0 || strcmp(serverip,"127.0.0.1")==0){
+		printf("Cannot register with self\nrfss>");
+		return -1;
+	}
+	if(connected_node_count>0){
+		printf("This node is already registered\nrfss>");
+		return -1;
+	}
 	char registermsg[BUFFLEN];
 	memset(registermsg,0,BUFFLEN);
 	char *hostname = (char *)malloc(sizeof(char)*BUFFLEN);
@@ -749,7 +1106,11 @@ int rfss_register(char *serverip, int serverport){
 	memset(&myaddr,0,sizeof(struct sockaddr_in));
 	serveraddr.sin_family = AF_INET;
 	serveraddr.sin_port = htons(serverport);
-	inet_pton(AF_INET,serverip,&serveraddr.sin_addr);
+	int isvalidip = inet_pton(AF_INET,serverip,&serveraddr.sin_addr);
+	if(isvalidip == 0){
+		printf("Error: %s is not a valid ip. Usage: REGISTER <SERVERIP> <PORT>\nrfss>");
+		return -1;
+	}
 	if((clientsockd = socket(AF_INET, SOCK_STREAM, 0))<0){
 		perror("register(): socket creation error\n");
 		free(hostname);
@@ -775,7 +1136,8 @@ int rfss_register(char *serverip, int serverport){
 	memset(saveptr,0,BUFFLEN);
 	char *response = strtok_r(registermsg,":",&saveptr);
 	if(strcasecmp(response, "registerack")!=0){
-		printf("register(): Register failed. Response from server: %s\n",registermsg);
+		response = strtok_r(NULL,":",&saveptr);
+		printf("register(): Register failed. Response from server: %s\n",response);
 		free(hostname);
 		return -1;
 	}
@@ -787,6 +1149,9 @@ int rfss_register(char *serverip, int serverport){
 	rfss_add_connected_node(clientsockd, serverip, hostname, serverport);
 	char *entry;
 	char *ip_entry, *host_entry, *port_entry;
+	printf("List of clients aready connected:-\n");
+	printf("   S.No\t\t\tHostname\t\tIP\tPort\n");
+	int serial=1;
 	while(1){
 		entry = strtok_r(NULL,":",&saveptr);
 		if(entry == NULL)
@@ -795,11 +1160,22 @@ int rfss_register(char *serverip, int serverport){
 		host_entry = strtok(NULL,";");
 		port_entry = strtok(NULL,";");
 		rfss_add_global_node(ip_entry,host_entry,atoi(port_entry));
+		printf("%5d %30s %20s %10s\n",serial,host_entry,ip_entry,port_entry);
+		serial++;
+	}
+	if(serial == 1){
+		printf("You are the first client to connect\n");
 	}
 	free(hostname);
 	return 0;
 }
 
+/*
+ * Broadcast message to all the connected nodes.
+ * Uses by server to notify connected nodes about network updation.
+ * 
+ * @arg msg: message to be broadcasted
+ */
 void broadcast_msg(char *msg){
 	struct rfss_node *ptr;
 	for(ptr=connected_node_list;ptr;ptr=ptr->next){
@@ -808,6 +1184,13 @@ void broadcast_msg(char *msg){
 	}
 }
 
+/*
+ * Sends message to a particular node
+ * 
+ * @arg ip : IP of the remote machine
+ * @arg port : port of the remote machine
+ * @arg msg : message to be sent
+ */
 void send_msg(char *ip, int port, char *msg){
 	struct sockaddr_in remaddr;
 	memset(&remaddr, 0, sizeof(remaddr));
@@ -821,6 +1204,13 @@ void send_msg(char *ip, int port, char *msg){
 	}
 	close(remsockd);
 }
+
+/*
+ * Returns the mode at which this application is operating.
+ * Can be either CLIENT or SERVER.
+ * 
+ * @return mode
+ */
 int getmode(){
 	return mode;
 }
@@ -833,6 +1223,13 @@ struct rfss_node * rfss_findnodebysockd(int sockd){
 	}
 	return NULL;
 }*/
+
+/*
+ * Gets the connection node against a given connection id.
+ * 
+ * @arg con: connection id
+ * @return : node against the connection id if it exists, NULL otherwise
+ */
 struct rfss_node * rfss_getnodebyconn(int con){
 	if(con <= 0 || con > connected_node_count)
 		return NULL;
@@ -845,6 +1242,11 @@ struct rfss_node * rfss_getnodebyconn(int con){
 	return nd;
 }
 
+/*
+ * Returns the number of connections this node is connected to
+ * 
+ * @return : connection count
+ */
 int getconnectioncount(){
 	return connected_node_count;
 }

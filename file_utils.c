@@ -1,3 +1,12 @@
+/*
+ * file_utils.c : Contains functions to deal with files on the
+ * local system.
+ * Created for CSE 589 Spring 2014 Programming Assignment 1
+ * 
+ * @Author : Biplap Sarkar (biplapsa@buffalo.edu)
+ *
+ */ 
+
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -7,13 +16,34 @@
 #include "remote_command_processor.h"
 #include "file_utils.h"
 
+/* Buffer for file transfer */
 static char filebuff[FILEBUFFLEN];
+
+/* 
+ * Finds the base name of the file and populates
+ * into base argument populated by the caller.
+ * This function does not allocate any new memory
+ * to put the result and assumes the caller
+ * has already allocated memory in base argument.
+ * 
+ * @arg path : relative or absolute path of the file
+ * @arg base : used to store the basename of the file
+ * 
+ */
 void fu_basename(char *path, char **base){
 	char *ptr = strrchr(path, '/');
 	if(ptr)
-		strcpy(*base, path+1);
+		strcpy(*base, ptr+1);
+	else
+		strcpy(*base, path);
 }
 
+/*
+ * Returns the size of a file.
+ * @arg path: relative or absolute path of the file
+ * @return: file size of file in bytes if successful
+ * or -1 in case of error
+ */ 
 int fu_getfilesize(char *path){
 	struct stat st;
 	int res = stat(path, &st);
@@ -22,6 +52,14 @@ int fu_getfilesize(char *path){
 	return res;
 }
 
+/*
+ * Receives file from socket and writes into file
+ * specified by filename.
+ * @arg sockd : socket from which data is to be read
+ * @arg filename : name of the file where data is to be written
+ * @arg len : lenght of data in bytes
+ * @return : returns 0 in case of success, -1 in case of error
+ */ 
 int fu_recvfile(int sockd, char *filename, int len){
 	int fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
 	if(fd<0){
@@ -53,23 +91,19 @@ int fu_recvfile(int sockd, char *filename, int len){
 	return 0;
 }
 
+/*
+ * Writes data into socket descriptor from file.
+ * @arg sockd : socket descriptor where data is to be written
+ * @arg path : file from which data is to be written
+ * @arg len : length of data in bytes
+ * @return : returns 0 in case of success, -1 in case of error
+ */ 
 int fu_sendfile(int sockd, char *path, int len){
-	/*char *filename = (char *)malloc(sizeof(char)*BUFFLEN);
-	memset(filename, 0, BUFFLEN);
-	fu_basename(path, &filename);
-	if(strlen(filename)==0){
-		printf("Error: file %s cannot be uploaded, make sure it exists\nrfss>",path);
-		return -1;
-	}*/
 	int fd = open(path, O_RDONLY);
 	if(fd < 0){
 		printf("Error: Could not open file %s. Make sure you have priviledges to read it\nrfss>",path);
 		return -1;
 	}
-	/*char uploadheader[BUFFLEN];
-	memset(uploadheader, 0, BUFFLEN);
-	sprintf(uploadheader,"upload:%s:%d\n",filename,len);
-	send(sockd, uploadheader, strlen(uploadheader), 0);*/
 	int bytestosend = len;
 	int bytessent;
 	int bytesread;
